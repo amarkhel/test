@@ -1,0 +1,141 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.example</groupId>
+  <artifactId>weather-server</artifactId>
+  <version>0.1.0</version>
+  <name>weather-server</name>
+  <packaging>jar</packaging>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>11</maven.compiler.release>
+
+    <scala.version>2.13.14</scala.version>
+    <scala.binary.version>2.13</scala.binary.version>
+
+    <http4s.version>0.23.27</http4s.version>
+    <circe.version>0.14.9</circe.version>
+    <cats.effect.version>3.5.4</cats.effect.version>
+    <logback.version>1.5.6</logback.version>
+    <munit.version>1.0.0</munit.version>
+    <munit.cats.effect.version>2.0.0</munit.cats.effect.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.http4s</groupId>
+      <artifactId>http4s-ember-server_${scala.binary.version}</artifactId>
+      <version>${http4s.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.http4s</groupId>
+      <artifactId>http4s-ember-client_${scala.binary.version}</artifactId>
+      <version>${http4s.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.http4s</groupId>
+      <artifactId>http4s-dsl_${scala.binary.version}</artifactId>
+      <version>${http4s.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.http4s</groupId>
+      <artifactId>http4s-circe_${scala.binary.version}</artifactId>
+      <version>${http4s.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.circe</groupId>
+      <artifactId>circe-generic_${scala.binary.version}</artifactId>
+      <version>${circe.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.circe</groupId>
+      <artifactId>circe-parser_${scala.binary.version}</artifactId>
+      <version>${circe.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.typelevel</groupId>
+      <artifactId>cats-effect_${scala.binary.version}</artifactId>
+      <version>${cats.effect.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>${logback.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.scalameta</groupId>
+      <artifactId>munit_${scala.binary.version}</artifactId>
+      <version>${munit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.typelevel</groupId>
+      <artifactId>munit-cats-effect_${scala.binary.version}</artifactId>
+      <version>${munit.cats.effect.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <sourceDirectory>src/main/scala</sourceDirectory>
+    <testSourceDirectory>src/test/scala</testSourceDirectory>
+
+    <plugins>
+      <plugin>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>4.9.2</version>
+        <executions>
+          <execution>
+            <id>scala-compile</id>
+            <phase>compile</phase>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>scala-test-compile</id>
+            <phase>test-compile</phase>
+            <goals>
+              <goal>testCompile</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <scalaVersion>${scala.version}</scalaVersion>
+          <args>
+            <arg>-deprecation</arg>
+            <arg>-feature</arg>
+          </args>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <!-- Keep Spec naming from current test files -->
+          <includes>
+            <include>**/*Spec.class</include>
+          </includes>
+          <useModulePath>false</useModulePath>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.4.1</version>
+        <configuration>
+          <mainClass>weather.Main</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+
