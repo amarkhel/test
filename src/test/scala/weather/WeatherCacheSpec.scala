@@ -3,14 +3,17 @@ package weather
 import cats.effect.{IO, Ref}
 import cats.implicits._
 import munit.CatsEffectSuite
+import org.testcontainers.DockerClientFactory
+import org.testcontainers.containers.GenericContainer
+import org.testcontainers.utility.DockerImageName
 
 import scala.concurrent.duration._
+import scala.util.control.NonFatal
 
 /** Tests for the [[WeatherCache]] interface.
   *
   * In-memory tests always run.
-  * Redis tests run only when a Redis server is reachable at [[Config.redisUri]];
-  * they are silently skipped (marked Ignored) otherwise.
+  * Redis tests run when Docker is available (via Testcontainers).
   */
 class WeatherCacheSpec extends CatsEffectSuite {
 
@@ -24,6 +27,9 @@ class WeatherCacheSpec extends CatsEffectSuite {
     ForecastPeriod("Tonight", 55, "F", "Clear")
   ))
 
+  private final class RedisContainer(image: DockerImageName)
+      extends GenericContainer[RedisContainer](image)
+
   /** Builds a counter-wrapped fetch effect: (fetchIO, countIO). */
   private def countedFetch[A](result: A): IO[(IO[A], IO[Int])] =
     Ref.of[IO, Int](0).map { ref =>
@@ -32,8 +38,55 @@ class WeatherCacheSpec extends CatsEffectSuite {
 
   private def uniqueKey(): String = s"test-${java.util.UUID.randomUUID()}"
 
+  private def dockerCheckMessage(err: Throwable): String = {
+    val base = Option(err.getMessage).filter(_.nonEmpty).getOrElse(err.getClass.getSimpleName)
+    if (base.toLowerCase.contains("client version") && base.toLowerCase.contains("too old"))
+      s"Docker API mismatch for Testcontainers ($base). Unset DOCKER_API_VERSION or upgrade Docker."
+    else
+      s"Docker daemon is unavailable for Testcontainers Redis tests ($base)"
+  }
+
+  /** Runs a test block with a Testcontainers Redis instance.
+    * Marks the test Ignored when Docker is unavailable.
+    */
+  private def withRedisContainerOrSkip[A](
+      pointsTtl:   FiniteDuration = 5.minutes,
+      forecastTtl: FiniteDuration = 5.minutes
+  )(test: WeatherCache => IO[A]): IO[A] = {
+    val dockerAvailable =
+      try Right(DockerClientFactory.instance().isDockerAvailable)
+      catch {
+        case NonFatal(e) => Left(dockerCheckMessage(e))
+      }
+
+    dockerAvailable match {
+      case Left(reason) =>
+        IO {
+          assume(false, reason)
+          throw new IllegalStateException("unreachable")
+        }
+      case Right(false) =>
+        IO {
+          assume(false, "Docker daemon is unavailable for Testcontainers Redis tests")
+          throw new IllegalStateException("unreachable")
+        }
+      case Right(true) =>
+        IO.blocking {
+          val c = new RedisContainer(DockerImageName.parse("redis:7-alpine"))
+            .withExposedPorts(6379)
+          c.start()
+          c
+        }.bracket { container =>
+          val redisUri = s"redis://${container.getHost}:${container.getMappedPort(6379)}"
+          RedisWeatherCache.resource(redisUri, pointsTtl, forecastTtl).use(test)
+        } { container =>
+          IO.blocking(container.stop()).handleErrorWith(_ => IO.unit)
+        }
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // Shared behavioural suite — runs against any WeatherCache implementation
+  // Shared behavioural suite — currently applied to in-memory cache
   // ---------------------------------------------------------------------------
 
   private def runCacheSuite(label: String, makeCache: IO[WeatherCache]): Unit = {
@@ -76,7 +129,7 @@ class WeatherCacheSpec extends CatsEffectSuite {
       } yield assertEquals(count, 2)
     }
 
-    test(s"$label: fetch errors are NOT cached — next call retries upstream") {
+    test(s"$label: fetch errors are NOT cached - next call retries upstream") {
       for {
         cache       <- makeCache
         failRef     <- Ref.of[IO, Int](0)
@@ -130,8 +183,8 @@ class WeatherCacheSpec extends CatsEffectSuite {
       _            <- IO.sleep(2.millis)
       _            <- cache.getOrFetchPoints(keyB)(f2)
       _            <- IO.sleep(2.millis)
-      _            <- cache.getOrFetchPoints(keyC)(f3)   // A evicted (oldest)
-      _            <- cache.getOrFetchPoints(keyA)(f1)   // A re-fetched
+      _            <- cache.getOrFetchPoints(keyC)(f3)
+      _            <- cache.getOrFetchPoints(keyA)(f1)
       c1           <- cnt1
     } yield assertEquals(c1, 2)
   }
@@ -148,37 +201,59 @@ class WeatherCacheSpec extends CatsEffectSuite {
   }
 
   // ---------------------------------------------------------------------------
-  // Redis cache suite (skipped when Redis is unavailable)
+  // Redis cache suite (via Testcontainers)
   // ---------------------------------------------------------------------------
 
-  /** Runs `test` with a Redis-backed cache.
-    * Marks test Ignored if Redis is not reachable.
-    */
-  private def withRedisOrSkip(
-      pointsTtl:   FiniteDuration = 5.minutes,
-      forecastTtl: FiniteDuration = 5.minutes
-  )(test: WeatherCache => IO[Unit]): IO[Unit] =
-    RedisWeatherCache
-      .resource(Config.redisUri, pointsTtl, forecastTtl)
-      .use(test)
-      .handleError { e =>
-        assume(false, s"Redis not available at ${Config.redisUri} — ${e.getMessage}")
-      }
+  test("Redis: points cache hit avoids re-fetching") {
+    withRedisContainerOrSkip() { cache =>
+      for {
+        p             <- countedFetch(samplePoints)
+        (fetch, cnt)   = p
+        key            = uniqueKey()
+        _             <- cache.getOrFetchPoints(key)(fetch)
+        _             <- cache.getOrFetchPoints(key)(fetch)
+        count         <- cnt
+      } yield assertEquals(count, 1)
+    }
+  }
 
-  runCacheSuite(
-    "Redis",
-    RedisWeatherCache
-      .resource(Config.redisUri, 5.minutes, 5.minutes)
-      .allocated
-      .map(_._1)
-      .handleError { e =>
-        assume(false, s"Redis not available at ${Config.redisUri} — ${e.getMessage}")
-        WeatherCache.noop // unreachable; satisfies the return type
+  test("Redis: forecast cache hit avoids re-fetching") {
+    withRedisContainerOrSkip() { cache =>
+      for {
+        p             <- countedFetch(sampleForecast)
+        (fetch, cnt)   = p
+        key            = uniqueKey()
+        _             <- cache.getOrFetchForecast(key)(fetch)
+        r             <- cache.getOrFetchForecast(key)(fetch)
+        count         <- cnt
+      } yield {
+        assertEquals(count, 1)
+        assertEquals(r.periods.head.temperature, 72)
       }
-  )
+    }
+  }
+
+  test("Redis: fetch errors are NOT cached - next call retries upstream") {
+    withRedisContainerOrSkip() { cache =>
+      for {
+        failRef     <- Ref.of[IO, Int](0)
+        successRef  <- Ref.of[IO, Int](0)
+        key          = uniqueKey()
+        fetchFail    = failRef.update(_ + 1) *> IO.raiseError[PointsResponse](new RuntimeException("boom"))
+        fetchOk      = successRef.update(_ + 1).as(samplePoints)
+        _           <- cache.getOrFetchPoints(key)(fetchFail).attempt
+        _           <- cache.getOrFetchPoints(key)(fetchOk)
+        fails       <- failRef.get
+        successes   <- successRef.get
+      } yield {
+        assertEquals(fails,     1)
+        assertEquals(successes, 1)
+      }
+    }
+  }
 
   test("Redis: TTL expiry triggers fresh fetch") {
-    withRedisOrSkip(pointsTtl = 200.millis, forecastTtl = 200.millis) { cache =>
+    withRedisContainerOrSkip(pointsTtl = 200.millis, forecastTtl = 200.millis) { cache =>
       for {
         p             <- countedFetch(samplePoints)
         (fetch, cnt)   = p
@@ -192,7 +267,7 @@ class WeatherCacheSpec extends CatsEffectSuite {
   }
 
   test("Redis: value survives a cache round-trip with correct content") {
-    withRedisOrSkip() { cache =>
+    withRedisContainerOrSkip() { cache =>
       for {
         key <- IO.pure(uniqueKey())
         _   <- cache.getOrFetchForecast(key)(IO.pure(sampleForecast))

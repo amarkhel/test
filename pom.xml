@@ -24,6 +24,8 @@
     <munit.cats.effect.version>2.0.0</munit.cats.effect.version>
     <redis4cats.version>1.7.2</redis4cats.version>
     <log4cats.version>2.7.0</log4cats.version>
+    <testcontainers.version>1.21.3</testcontainers.version>
+    <docker.api.version>1.40</docker.api.version>
   </properties>
 
   <dependencies>
@@ -96,6 +98,12 @@
       <version>${munit.cats.effect.version}</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -142,6 +150,9 @@
             <include>**/*Spec.class</include>
           </includes>
           <useModulePath>false</useModulePath>
+          <systemPropertyVariables>
+            <docker.api.version>${docker.api.version}</docker.api.version>
+          </systemPropertyVariables>
         </configuration>
       </plugin>
 

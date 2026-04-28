@@ -19,7 +19,9 @@ lazy val root = (project in file("."))
       "org.typelevel"  %% "log4cats-slf4j"      % "2.7.0",
       // Test
       "org.scalameta"  %% "munit"              % "1.0.0"  % Test,
-      "org.typelevel"  %% "munit-cats-effect"  % "2.0.0"  % Test
+      "org.typelevel"  %% "munit-cats-effect"  % "2.0.0"  % Test,
+      "org.testcontainers" % "testcontainers"  % "1.21.3" % Test
     ),
-    testFrameworks += new TestFramework("munit.Framework")
+    testFrameworks += new TestFramework("munit.Framework"),
+    Test / javaOptions += "-Ddocker.api.version=1.40"
   )
