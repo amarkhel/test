@@ -61,9 +61,17 @@ class WeatherServiceSpec extends CatsEffectSuite with WeatherServiceTestBase {
     WeatherService.validateCoords(39.7456, -97.0892)
   }
 
-  test("validateCoords: accepts boundary values") {
-    WeatherService.validateCoords(90.0, 180.0) >>
+  test("validateCoords: accepts Alaska and Puerto Rico coordinates") {
+    WeatherService.validateCoords(61.2181, -149.9003) >>
+      WeatherService.validateCoords(18.4655, -66.1057)
+  }
+
+  test("validateCoords: rejects global boundary values outside NWS coverage") {
+    interceptIO[WeatherError.UnsupportedCoordinates](
+      WeatherService.validateCoords(90.0, 180.0)
+    ) >> interceptIO[WeatherError.UnsupportedCoordinates](
       WeatherService.validateCoords(-90.0, -180.0)
+    )
   }
 
   test("validateCoords: rejects lat > 90") {
@@ -90,6 +98,12 @@ class WeatherServiceSpec extends CatsEffectSuite with WeatherServiceTestBase {
     )
   }
 
+  test("validateCoords: rejects coordinates outside NWS coverage") {
+    interceptIO[WeatherError.UnsupportedCoordinates](
+      WeatherService.validateCoords(51.5074, -0.1278)
+    )
+  }
+
   // -----------------------------------------------------------------------
   // fetch - mock Client
   // -----------------------------------------------------------------------
@@ -108,6 +122,12 @@ class WeatherServiceSpec extends CatsEffectSuite with WeatherServiceTestBase {
   test("fetch: raises InvalidCoordinates for out-of-range lat") {
     interceptIO[WeatherError.InvalidCoordinates](
       WeatherService.fetch(200.0, 0.0, mockClient())
+    )
+  }
+
+  test("fetch: raises UnsupportedCoordinates for non-US coordinates") {
+    interceptIO[WeatherError.UnsupportedCoordinates](
+      WeatherService.fetch(51.5074, -0.1278, mockClient())
     )
   }
 

@@ -25,6 +25,7 @@ object Routes {
           .flatMap(result => Ok(result.asJson))
           .handleErrorWith {
             case e: WeatherError.InvalidCoordinates  => BadRequest(errorJson(e.getMessage))
+            case e: WeatherError.UnsupportedCoordinates => BadRequest(errorJson(e.getMessage))
             case e: WeatherError.UpstreamNotFound    => NotFound(errorJson(e.getMessage))
             case e: WeatherError.UpstreamUnavailable => ServiceUnavailable(errorJson(e.getMessage))
             case e: WeatherError.EmptyForecast       => BadGateway(errorJson(e.getMessage))

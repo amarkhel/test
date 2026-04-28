@@ -45,6 +45,12 @@ object WeatherError {
   final case class InvalidCoordinates(lat: Double, lon: Double)
       extends WeatherError(s"Coordinates out of valid range: lat=$lat, lon=$lon")
 
+  /** lat/lon are valid but outside NWS US/territory coverage; return 400. */
+  final case class UnsupportedCoordinates(lat: Double, lon: Double)
+      extends WeatherError(
+        s"Coordinates are outside NWS coverage area: lat=$lat, lon=$lon"
+      )
+
   /** NWS returned 404 (location not covered); return 404. */
   final case class UpstreamNotFound(details: String)
       extends WeatherError(s"NWS does not cover these coordinates: $details")

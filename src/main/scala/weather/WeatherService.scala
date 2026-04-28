@@ -12,11 +12,36 @@ import org.http4s.{Request, Status, Uri}
   */
 object WeatherService {
 
+  private final case class BoundingBox(
+      minLat: Double,
+      maxLat: Double,
+      minLon: Double,
+      maxLon: Double
+  ) {
+    def contains(lat: Double, lon: Double): Boolean =
+      lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon
+  }
 
-  /** Fail fast if coordinates are outside the valid global ranges. */
+  // Broad NWS-supported US coverage regions (states + major territories).
+  private val nwsCoverageBoxes: List[BoundingBox] = List(
+    BoundingBox(24.3, 49.5, -125.0, -66.5),   // contiguous US
+    BoundingBox(51.0, 71.8, -179.9, -129.5),  // Alaska
+    BoundingBox(18.8, 22.5, -160.6, -154.5),  // Hawaii
+    BoundingBox(17.5, 18.7, -67.6, -64.4),    // Puerto Rico + USVI
+    BoundingBox(13.0, 20.0, 144.5, 146.8),    // Guam + Northern Mariana Islands
+    BoundingBox(-14.6, -10.8, -171.3, -168.0) // American Samoa
+  )
+
+  private def isWithinNwsCoverage(lat: Double, lon: Double): Boolean =
+    nwsCoverageBoxes.exists(_.contains(lat, lon))
+
+
+  /** Fail fast for invalid coordinates or coordinates outside NWS coverage. */
   def validateCoords(lat: Double, lon: Double): IO[Unit] =
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
       IO.raiseError(WeatherError.InvalidCoordinates(lat, lon))
+    else if (!isWithinNwsCoverage(lat, lon))
+      IO.raiseError(WeatherError.UnsupportedCoordinates(lat, lon))
     else IO.unit
 
   /** Temperature buckets (Fahrenheit):
