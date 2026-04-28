@@ -35,6 +35,6 @@ object Routes {
 
       // Missing or malformed query params → 400
       case GET -> Root / "weather" =>
-        BadRequest(Json.obj("error" -> Json.fromString("Required query parameters: lat (Double), lon (Double)")))
+        BadRequest(errorJson("Required query parameters: lat (Double), lon (Double)"))
     }
 }
