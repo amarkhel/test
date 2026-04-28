@@ -62,13 +62,11 @@ curl "http://localhost:8080/weather?lat=27.9506&lon=-82.4572"
 
 ## Shortcuts / non-production notes
 1. **No Docker image** - A production deployment would include a `Dockerfile` and container registry (ECR, Docker Hub, etc.) for reproducible, scalable deployments.
-2. **No caching** - every request makes two NWS API calls.
-2. **No retry / back-off / rate-limiting / circut breakers** - A production service would add exponential back-off with jitter.
-3. **"Today" fallback** - after ~6 PM the NWS removes the "Today" period and the
+2. **In-memory TTL caching only** - the service caches `/points` and forecast responses per process (default: points 6h, forecast 10m). A production deployment may use a distributed cache (for example Redis) if multiple instances need shared cache state.
+3. **No retry / back-off / rate-limiting / circuit breakers** - A production service would add exponential back-off with jitter.
+4. **"Today" fallback** - after ~6 PM the NWS removes the "Today" period and the
    first period becomes "Tonight". The server falls back to the first available
    period rather than returning an error.
-4. **Fahrenheit only** - NWS always returns °F for US locations, so this is fine
+5. **Fahrenheit only** - NWS always returns °F for US locations, so this is fine
    for the stated use case. Celsius conversion is not implemented.
-5. **No sophisticated coordinate validation** - A production service would return HTTP 400 for non-US coordinates (outside NWS coverage).
-6. **No Docker image** - A production deployment would include a `Dockerfile`
-   and container registry (ECR, Docker Hub, etc.) for reproducible, scalable deployments.
+6. **No sophisticated coordinate validation** - A production service would return HTTP 400 for non-US coordinates (outside NWS coverage).
