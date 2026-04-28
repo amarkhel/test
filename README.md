@@ -63,7 +63,7 @@ curl "http://localhost:8080/weather?lat=27.9506&lon=-82.4572"
 ## Shortcuts / non-production notes
 1. **No Docker image** - A production deployment would include a `Dockerfile` and container registry (ECR, Docker Hub, etc.) for reproducible, scalable deployments.
 2. **No caching** - every request makes two NWS API calls.
-2. **No retry / back-off / rate-limiting / circut breakers** - A production service would add exponential back-off with jitter.
+2. **Basic retry/back-off only** - transient upstream failures now use exponential retry/back-off with jitter and optional HTTP 429 retries; rate-limiting controls and circuit breakers are still not implemented.
 3. **"Today" fallback** - after ~6 PM the NWS removes the "Today" period and the
    first period becomes "Tonight". The server falls back to the first available
    period rather than returning an error.

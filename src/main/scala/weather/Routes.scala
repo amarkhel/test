@@ -26,6 +26,7 @@ object Routes {
           .handleErrorWith {
             case e: WeatherError.InvalidCoordinates  => BadRequest(errorJson(e.getMessage))
             case e: WeatherError.UpstreamNotFound    => NotFound(errorJson(e.getMessage))
+            case e: WeatherError.UpstreamRateLimited => TooManyRequests(errorJson(e.getMessage))
             case e: WeatherError.UpstreamUnavailable => ServiceUnavailable(errorJson(e.getMessage))
             case e: WeatherError.EmptyForecast       => BadGateway(errorJson(e.getMessage))
             case e: WeatherError.DecodeFailure       => BadGateway(errorJson(e.getMessage))

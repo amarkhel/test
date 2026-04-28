@@ -5,12 +5,41 @@ import io.circe.Decoder
 import io.circe.parser.decode
 import org.http4s.client.Client
 import org.http4s.{Request, Status, Uri}
+import org.typelevel.ci.CIString
+import weather.util.{HttpHeaderParsers, RetryPolicy, RetryUtils}
+
+import scala.concurrent.duration._
 
 /** Calls the NWS API in two steps:
   *   1. GET /points/{lat},{lon}  -> resolve grid + get forecast URL
   *   2. GET {forecastUrl}        -> get periods, find "Today"
   */
 object WeatherService {
+
+  private val retryAfterHeaderName: CIString = CIString("Retry-After")
+
+  private val retryPolicy: RetryPolicy = RetryPolicy(
+    maxAttempts = Config.retryMaxAttempts,
+    initialDelay = Config.retryInitialDelay,
+    backoffMultiplier = Config.retryBackoffMultiplier,
+    maxDelay = Config.retryMaxDelay,
+    jitterEnabled = Config.retryJitterEnabled,
+    jitterRatio = Config.retryJitterRatio
+  )
+
+  private def isRetryable(error: Throwable): Boolean =
+    error match {
+      case _: WeatherError.UpstreamUnavailable => true
+      case _: WeatherError.UpstreamRateLimited => Config.retryOnHttp429
+      case _: java.io.IOException              => true
+      case _                                   => false
+    }
+
+  private def retryDelayFrom(error: Throwable): Option[FiniteDuration] =
+    error match {
+      case WeatherError.UpstreamRateLimited(Some(d), _) => Some(d)
+      case _                                            => None
+    }
 
 
   /** Fail fast if coordinates are outside the valid global ranges. */
@@ -51,6 +80,14 @@ object WeatherService {
             IO.raiseError(WeatherError.UpstreamNotFound(body.take(300)))
           }
 
+        case Status.TooManyRequests =>
+          resp.as[String].flatMap { body =>
+            val retryAfter = resp.headers.headers
+              .find(_.name == retryAfterHeaderName)
+              .flatMap(h => HttpHeaderParsers.parseRetryAfter(h.value))
+            IO.raiseError(WeatherError.UpstreamRateLimited(retryAfter, body.take(300)))
+          }
+
         case s if s.code >= 500 =>
           IO.raiseError(WeatherError.UpstreamUnavailable(s"NWS returned HTTP ${s.code}"))
 
@@ -83,7 +120,12 @@ object WeatherService {
   ): IO[A] =
     for {
       uri  <- parseUri(uriKind, rawUri)
-      body <- fetchBody(uri, client)
+      body <- RetryUtils.withRetry(
+                effect = fetchBody(uri, client),
+                policy = retryPolicy,
+                isRetryable = isRetryable,
+                retryDelayFromError = retryDelayFrom
+              )
       data <- decodeJson[A](decodeLabel, body)
     } yield data
 

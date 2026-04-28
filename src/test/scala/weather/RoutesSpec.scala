@@ -81,6 +81,15 @@ class RoutesSpec extends CatsEffectSuite with WeatherServiceTestBase {
       }
   }
 
+  test("GET /weather returns 429 when NWS rate-limits") {
+    val req = Request[IO](Method.GET,
+      Uri.unsafeFromString("/weather?lat=39.7456&lon=-97.0892"))
+    app(mockClient(pointsStatus = Status.TooManyRequests, pointsBody = "slow down"))
+      .run(req).map { resp =>
+        assertEquals(resp.status, Status.TooManyRequests)
+      }
+  }
+
   test("GET /weather returns 502 when NWS forecast response is undecodable") {
     val req = Request[IO](Method.GET,
       Uri.unsafeFromString("/weather?lat=39.7456&lon=-97.0892"))

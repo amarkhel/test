@@ -1,7 +1,13 @@
 package weather
 
 import munit.CatsEffectSuite
+import org.http4s.Header
 import org.http4s.Status
+import org.typelevel.ci.CIString
+
+import java.time.{ZoneOffset, ZonedDateTime}
+import java.time.format.DateTimeFormatter
+import scala.concurrent.duration._
 
 class WeatherServiceSpec extends CatsEffectSuite with WeatherServiceTestBase {
 
@@ -117,6 +123,141 @@ class WeatherServiceSpec extends CatsEffectSuite with WeatherServiceTestBase {
         mockClient(pointsStatus = Status.NotFound, pointsBody = "not found"))
     )
   }
+
+  test("fetch: retries /points transient failures and eventually succeeds") {
+    for {
+      pair <- sequenceClient(
+                pointsResponses = List(
+                  Status.ServiceUnavailable -> "down-1",
+                  Status.ServiceUnavailable -> "down-2",
+                  Status.Ok -> goodPointsJson
+                ),
+                forecastResponses = List(Status.Ok -> goodForecastJson)
+              )
+      client = pair._1
+      counts = pair._2
+      result <- WeatherService.fetch(39.7456, -97.0892, client)
+      callCounts <- counts
+    } yield {
+      assertEquals(result.shortForecast, "Sunny")
+      assertEquals(callCounts, (3, 1))
+    }
+  }
+
+  test("fetch: retries forecast transient failures and eventually succeeds") {
+    for {
+      pair <- sequenceClient(
+                pointsResponses = List(Status.Ok -> goodPointsJson),
+                forecastResponses = List(
+                  Status.InternalServerError -> "oops-1",
+                  Status.InternalServerError -> "oops-2",
+                  Status.Ok -> goodForecastJson
+                )
+              )
+      client = pair._1
+      counts = pair._2
+      result <- WeatherService.fetch(39.7456, -97.0892, client)
+      callCounts <- counts
+    } yield {
+      assertEquals(result.temperature, 72)
+      assertEquals(callCounts, (1, 3))
+    }
+  }
+
+  test("fetch: does not retry /points 404 (non-retryable)") {
+    for {
+      pair <- sequenceClient(
+                pointsResponses = List(Status.NotFound -> "not-found"),
+                forecastResponses = List(Status.Ok -> goodForecastJson)
+              )
+      client = pair._1
+      counts = pair._2
+      _ <- interceptIO[WeatherError.UpstreamNotFound](
+             WeatherService.fetch(39.7456, -97.0892, client)
+           )
+      callCounts <- counts
+    } yield assertEquals(callCounts, (1, 0))
+  }
+
+  test("fetch: retries HTTP 429 and succeeds when retryOnHttp429 is enabled") {
+    for {
+      pair <- sequenceClient(
+                pointsResponses = List(
+                  Status.TooManyRequests -> "rate-limited",
+                  Status.Ok -> goodPointsJson
+                ),
+                forecastResponses = List(Status.Ok -> goodForecastJson)
+              )
+      client = pair._1
+      counts = pair._2
+      result <- WeatherService.fetch(39.7456, -97.0892, client)
+      callCounts <- counts
+    } yield {
+      assertEquals(result.temperature, 72)
+      assertEquals(callCounts, (2, 1))
+    }
+  }
+
+  test("fetch: parses Retry-After delta-seconds on 429") {
+    for {
+      pair <- sequenceClientWithHeaders(
+                pointsResponses = List(
+                  (Status.TooManyRequests, "rate-limited", List(Header.Raw(CIString("Retry-After"), "0")))
+                ),
+                forecastResponses = List((Status.Ok, goodForecastJson, List.empty))
+              )
+      client = pair._1
+      counts = pair._2
+      err <- interceptIO[WeatherError.UpstreamRateLimited](
+               WeatherService.fetch(39.7456, -97.0892, client)
+             )
+      callCounts <- counts
+    } yield {
+      assertEquals(err.retryAfter, Some(0.seconds))
+      assertEquals(callCounts, (Config.retryMaxAttempts, 0))
+    }
+  }
+
+  test("fetch: parses Retry-After HTTP-date on 429") {
+    val httpDate = ZonedDateTime.now(ZoneOffset.UTC)
+      .minusMinutes(1)
+      .withNano(0)
+      .format(DateTimeFormatter.RFC_1123_DATE_TIME)
+
+    for {
+      pair <- sequenceClientWithHeaders(
+                pointsResponses = List(
+                  (Status.TooManyRequests, "rate-limited", List(Header.Raw(CIString("Retry-After"), httpDate)))
+                ),
+                forecastResponses = List((Status.Ok, goodForecastJson, List.empty))
+              )
+      client = pair._1
+      counts = pair._2
+      err <- interceptIO[WeatherError.UpstreamRateLimited](
+               WeatherService.fetch(39.7456, -97.0892, client)
+             )
+      callCounts <- counts
+    } yield {
+      assertEquals(err.retryAfter, Some(0.seconds))
+      assertEquals(callCounts, (Config.retryMaxAttempts, 0))
+    }
+  }
+
+  test("fetch: stops after retry exhaustion for /points failures") {
+    for {
+      pair <- sequenceClient(
+                pointsResponses = List(Status.ServiceUnavailable -> "still-down"),
+                forecastResponses = List(Status.Ok -> goodForecastJson)
+              )
+      client = pair._1
+      counts = pair._2
+      _ <- interceptIO[WeatherError.UpstreamUnavailable](
+             WeatherService.fetch(39.7456, -97.0892, client)
+           )
+      callCounts <- counts
+    } yield assertEquals(callCounts, (Config.retryMaxAttempts, 0))
+  }
+
 
   test("fetch: raises UpstreamUnavailable when NWS /points returns 503") {
     interceptIO[WeatherError.UpstreamUnavailable](

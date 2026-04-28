@@ -2,6 +2,8 @@ package weather
 
 import io.circe.{Decoder, HCursor}
 
+import scala.concurrent.duration.FiniteDuration
+
 case class PointsResponse(forecastUrl: String)
 
 object PointsResponse {
@@ -52,6 +54,14 @@ object WeatherError {
   /** NWS returned 5xx or an unexpected status; return 503. */
   final case class UpstreamUnavailable(details: String)
       extends WeatherError(s"NWS API unavailable: $details")
+
+  /** NWS returned 429 Too Many Requests; return 429. */
+  final case class UpstreamRateLimited(retryAfter: Option[FiniteDuration], details: String)
+      extends WeatherError(
+        retryAfter.fold(s"NWS rate-limited this request: $details") { d =>
+          s"NWS rate-limited this request. Retry after ${d.toSeconds}s: $details"
+        }
+      )
 
   /** NWS returned a valid response but with no forecast periods; return 502. */
   final case class EmptyForecast()
