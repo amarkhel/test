@@ -27,6 +27,48 @@ Server starts on **http://localhost:8080**.
 
 First start downloads dependencies (~100 MB). Subsequent starts are fast.
 
+## Docker
+
+Build the image:
+
+```bash
+docker build -t weather-server:latest .
+```
+
+Run the container:
+
+```bash
+docker run --rm -p 8080:8080 weather-server:latest
+```
+
+Test endpoint from host:
+
+```bash
+curl "http://localhost:8080/weather?lat=27.9506&lon=-82.4572"
+```
+
+## Deployment-confidence checks (Testcontainers)
+
+Unit tests stay fast by default. An opt-in Testcontainers smoke test is available in `src/it/scala/weather/DeploymentConfidenceSpec.scala`.
+
+1) Build the image to test:
+
+```bash
+docker build -t weather-server:latest .
+```
+
+2) Run integration checks (requires Docker daemon):
+
+```bash
+RUN_CONTAINER_TESTS=true sbt it:test
+```
+
+Optional image override:
+
+```bash
+RUN_CONTAINER_TESTS=true WEATHER_IMAGE=weather-server:test sbt it:test
+```
+
 ## Endpoint
 
 ```
@@ -61,14 +103,12 @@ curl "http://localhost:8080/weather?lat=27.9506&lon=-82.4572"
 | `hot` | ≥ 85 °F | ≥ 29 °C |
 
 ## Shortcuts / non-production notes
-1. **No Docker image** - A production deployment would include a `Dockerfile` and container registry (ECR, Docker Hub, etc.) for reproducible, scalable deployments.
-2. **No caching** - every request makes two NWS API calls.
-2. **No retry / back-off / rate-limiting / circut breakers** - A production service would add exponential back-off with jitter.
-3. **"Today" fallback** - after ~6 PM the NWS removes the "Today" period and the
+1. **Docker image only** - no CI publish flow is configured yet (for example to ECR or Docker Hub).
+2. **In-memory TTL caching only** - cache state is process-local; multi-instance deployments typically use a distributed cache.
+3. **No retry / back-off / rate-limiting / circuit breakers** - A production service would add exponential back-off with jitter.
+4. **"Today" fallback** - after ~6 PM the NWS removes the "Today" period and the
    first period becomes "Tonight". The server falls back to the first available
    period rather than returning an error.
-4. **Fahrenheit only** - NWS always returns °F for US locations, so this is fine
+5. **Fahrenheit only** - NWS always returns °F for US locations, so this is fine
    for the stated use case. Celsius conversion is not implemented.
-5. **No sophisticated coordinate validation** - A production service would return HTTP 400 for non-US coordinates (outside NWS coverage).
-6. **No Docker image** - A production deployment would include a `Dockerfile`
-   and container registry (ECR, Docker Hub, etc.) for reproducible, scalable deployments.
+6. **No sophisticated coordinate validation** - A production service would return HTTP 400 for non-US coordinates (outside NWS coverage).
