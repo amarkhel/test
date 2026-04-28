@@ -69,6 +69,6 @@ curl "http://localhost:8080/weather?lat=27.9506&lon=-82.4572"
    period rather than returning an error.
 4. **Fahrenheit only** - NWS always returns °F for US locations, so this is fine
    for the stated use case. Celsius conversion is not implemented.
-5. **No sophisticated coordinate validation** - A production service would return HTTP 400 for non-US coordinates (outside NWS coverage).
+5. **Coordinate coverage validation implemented** - requests now return HTTP 400 for coordinates outside NWS-supported US/territory regions using reusable polygon-based validation.
 6. **No Docker image** - A production deployment would include a `Dockerfile`
    and container registry (ECR, Docker Hub, etc.) for reproducible, scalable deployments.

@@ -59,6 +59,14 @@ class RoutesSpec extends CatsEffectSuite with WeatherServiceTestBase {
     }
   }
 
+  test("GET /weather returns 400 for coordinates outside NWS coverage") {
+    val req = Request[IO](Method.GET,
+      Uri.unsafeFromString("/weather?lat=51.5074&lon=-0.1278"))
+    app(mockClient()).run(req).map { resp =>
+      assertEquals(resp.status, Status.BadRequest)
+    }
+  }
+
   // -----------------------------------------------------------------------
   // NWS upstream errors
   // -----------------------------------------------------------------------
@@ -130,11 +138,11 @@ class RoutesSpec extends CatsEffectSuite with WeatherServiceTestBase {
 
   test("GET /weather error response body contains 'error' key") {
     val req = Request[IO](Method.GET,
-      Uri.unsafeFromString("/weather?lat=999.0&lon=0.0"))
+      Uri.unsafeFromString("/weather?lat=51.5074&lon=-0.1278"))
     app(mockClient()).run(req).flatMap { resp =>
       resp.as[String].map { body =>
         assert(body.contains("error"), s"body was: $body")
-        assert(body.contains("Coordinates out of valid range"), s"body was: $body")
+        assert(body.contains("outside NWS coverage area"), s"body was: $body")
       }
     }
   }

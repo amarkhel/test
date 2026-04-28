@@ -6,7 +6,7 @@ import io.circe.parser.decode
 import org.http4s.client.Client
 import org.http4s.{Request, Status, Uri}
 import org.typelevel.ci.CIString
-import weather.util.{HttpHeaderParsers, RetryPolicy, RetryUtils}
+import weather.util.{HttpHeaderParsers, NwsCoverageValidator, RetryPolicy, RetryUtils}
 
 import scala.concurrent.duration._
 
@@ -42,10 +42,12 @@ object WeatherService {
     }
 
 
-  /** Fail fast if coordinates are outside the valid global ranges. */
+  /** Fail fast when coordinates are invalid or outside NWS geographic coverage. */
   def validateCoords(lat: Double, lon: Double): IO[Unit] =
-    if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
+    if (!NwsCoverageValidator.isGloballyValid(lat, lon))
       IO.raiseError(WeatherError.InvalidCoordinates(lat, lon))
+    else if (!NwsCoverageValidator.isWithinNwsCoverage(lat, lon))
+      IO.raiseError(WeatherError.UnsupportedCoordinates(lat, lon))
     else IO.unit
 
   /** Temperature buckets (Fahrenheit):
