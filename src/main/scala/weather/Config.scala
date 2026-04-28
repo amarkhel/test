@@ -13,5 +13,11 @@ object Config {
   val retryJitterEnabled: Boolean = true
   val retryJitterRatio: Double = 0.20
   val retryOnHttp429: Boolean = true
+
+  // Rate limiting (token bucket, per client IP)
+  val rateLimitEnabled: Boolean = true
+  val rateLimitRequestsPerSecond: Double = 10.0
+  val rateLimitBurstSize: Int = 20
+  val rateLimitRetryAfterSeconds: Int = 1
 }
 

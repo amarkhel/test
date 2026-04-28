@@ -5,14 +5,24 @@ import com.comcast.ip4s._
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.middleware.Logger
+import weather.util.{RateLimiter, RateLimiterConfig, RateLimiterMiddleware}
 
 object Main extends IOApp.Simple {
 
   def run: IO[Unit] =
+    RateLimiter.create[String](RateLimiterConfig(
+      requestsPerSecond = Config.rateLimitRequestsPerSecond,
+      burstSize = Config.rateLimitBurstSize
+    )).flatMap { rateLimiter =>
     EmberClientBuilder.default[IO].build.use { client =>
-      val httpApp = Logger.httpApp(logHeaders = false, logBody = false)(
-        Routes.weatherRoutes(client).orNotFound
-      )
+      val baseRoutes = Routes.weatherRoutes(client)
+      val routes =
+        if (Config.rateLimitEnabled)
+          RateLimiterMiddleware(rateLimiter, Config.rateLimitRetryAfterSeconds)(baseRoutes)
+        else
+          baseRoutes
+
+      val httpApp = Logger.httpApp(logHeaders = false, logBody = false)(routes.orNotFound)
 
       EmberServerBuilder
         .default[IO]
@@ -23,5 +33,5 @@ object Main extends IOApp.Simple {
         .use { _ =>
           IO.println("Weather server running on http://localhost:8080") *> IO.never
         }
-    }
+    }}
 }
