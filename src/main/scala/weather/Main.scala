@@ -10,18 +10,27 @@ object Main extends IOApp.Simple {
 
   def run: IO[Unit] =
     EmberClientBuilder.default[IO].build.use { client =>
-      val httpApp = Logger.httpApp(logHeaders = false, logBody = false)(
-        Routes.weatherRoutes(client).orNotFound
-      )
+      WeatherCache
+        .inMemory(
+          pointsTtl = Config.pointsCacheTtl,
+          forecastTtl = Config.forecastCacheTtl,
+          pointsMaxEntries = Config.pointsCacheMaxEntries,
+          forecastMaxEntries = Config.forecastCacheMaxEntries
+        )
+        .flatMap { cache =>
+          val httpApp = Logger.httpApp(logHeaders = false, logBody = false)(
+            Routes.weatherRoutes(client, cache).orNotFound
+          )
 
-      EmberServerBuilder
-        .default[IO]
-        .withHost(ipv4"0.0.0.0")
-        .withPort(port"8080")
-        .withHttpApp(httpApp)
-        .build
-        .use { _ =>
-          IO.println("Weather server running on http://localhost:8080") *> IO.never
+          EmberServerBuilder
+            .default[IO]
+            .withHost(ipv4"0.0.0.0")
+            .withPort(port"8080")
+            .withHttpApp(httpApp)
+            .build
+            .use { _ =>
+              IO.println("Weather server running on http://localhost:8080") *> IO.never
+            }
         }
     }
 }

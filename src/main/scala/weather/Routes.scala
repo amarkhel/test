@@ -16,12 +16,12 @@ object Routes {
   private def errorJson(msg: String): Json =
     Json.obj("error" -> Json.fromString(msg))
 
-  def weatherRoutes(client: Client[IO]): HttpRoutes[IO] =
+  def weatherRoutes(client: Client[IO], cache: WeatherCache = WeatherCache.noop): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
 
       // GET /weather?lat=39.7456&lon=-97.0892
       case GET -> Root / "weather" :? LatQueryParam(lat) +& LonQueryParam(lon) =>
-        WeatherService.fetch(lat, lon, client)
+        WeatherService.fetch(lat, lon, client, cache)
           .flatMap(result => Ok(result.asJson))
           .handleErrorWith {
             case e: WeatherError.InvalidCoordinates  => BadRequest(errorJson(e.getMessage))

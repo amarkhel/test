@@ -1,9 +1,35 @@
 package weather
 
+import cats.effect.IO
+import cats.effect.Ref
+import cats.implicits._
 import munit.CatsEffectSuite
+import org.http4s.{HttpApp, Response}
+import org.http4s.client.Client
 import org.http4s.Status
 
+import scala.concurrent.duration._
+
 class WeatherServiceSpec extends CatsEffectSuite with WeatherServiceTestBase {
+
+  private def countingClient(
+      pointsStatus: Status   = Status.Ok,
+      forecastStatus: Status = Status.Ok,
+      pointsBody: String     = goodPointsJson,
+      forecastBody: String   = goodForecastJson
+  ): IO[(Client[IO], IO[(Int, Int)])] =
+    for {
+      pointsCount <- Ref.of[IO, Int](0)
+      forecastCount <- Ref.of[IO, Int](0)
+      client = Client.fromHttpApp(HttpApp[IO] { req =>
+        val isPoints = req.uri.path.renderString.startsWith("/points/")
+        val body = if (isPoints) pointsBody else forecastBody
+        val status = if (isPoints) pointsStatus else forecastStatus
+        val countUpdate = if (isPoints) pointsCount.update(_ + 1) else forecastCount.update(_ + 1)
+        countUpdate.as(Response[IO](status).withEntity(body))
+      })
+      counts = (pointsCount.get, forecastCount.get).mapN((_, _))
+    } yield (client, counts)
 
   test("categorise: hot when temperature >= 85") {
     assertEquals(WeatherService.categorise(85), "hot")
@@ -163,6 +189,42 @@ class WeatherServiceSpec extends CatsEffectSuite with WeatherServiceTestBase {
       assertEquals(result.shortForecast, "Clear")
       assertEquals(result.temperature, 55)
     }
+  }
+
+  test("fetch cache: repeated request for same location hits NWS only once per endpoint") {
+    for {
+      cache <- WeatherCache.inMemory(1.hour, 1.hour, 100, 100)
+      pair <- countingClient()
+      client = pair._1
+      countsIO = pair._2
+      _ <- WeatherService.fetch(39.7456, -97.0892, client, cache)
+      _ <- WeatherService.fetch(39.7456, -97.0892, client, cache)
+      counts <- countsIO
+    } yield assertEquals(counts, (1, 1))
+  }
+
+  test("fetch cache: expired entry triggers a fresh upstream fetch") {
+    for {
+      cache <- WeatherCache.inMemory(25.millis, 25.millis, 100, 100)
+      pair <- countingClient()
+      client = pair._1
+      countsIO = pair._2
+      _ <- WeatherService.fetch(39.7456, -97.0892, client, cache)
+      _ <- IO.sleep(60.millis)
+      _ <- WeatherService.fetch(39.7456, -97.0892, client, cache)
+      counts <- countsIO
+    } yield assertEquals(counts, (2, 2))
+  }
+
+  test("fetch cache: concurrent misses are single-flight per cache key") {
+    for {
+      cache <- WeatherCache.inMemory(1.hour, 1.hour, 100, 100)
+      pair <- countingClient()
+      client = pair._1
+      countsIO = pair._2
+      _ <- List.fill(8)(WeatherService.fetch(39.7456, -97.0892, client, cache)).parSequence
+      counts <- countsIO
+    } yield assertEquals(counts, (1, 1))
   }
 }
 
