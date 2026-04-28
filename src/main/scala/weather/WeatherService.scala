@@ -75,24 +75,44 @@ object WeatherService {
         .left.map(e => WeatherError.DecodeFailure(s"$label: ${e.getMessage}"))
     )
 
+  private def fetchPage[A: Decoder](
+      uriKind: String,
+      rawUri: String,
+      decodeLabel: String,
+      client: Client[IO]
+  ): IO[A] =
+    for {
+      uri  <- parseUri(uriKind, rawUri)
+      body <- fetchBody(uri, client)
+      data <- decodeJson[A](decodeLabel, body)
+    } yield data
+
+  private def formatCoord(value: Double, scale: Int = 4): String =
+    BigDecimal(value).setScale(scale, BigDecimal.RoundingMode.HALF_UP).toString
+
   def fetch(lat: Double, lon: Double, client: Client[IO]): IO[WeatherResult] = {
-    // Round to 4 decimal places - NWS rejects more precision
-    val latStr = BigDecimal(lat).setScale(4, BigDecimal.RoundingMode.HALF_UP).toString
-    val lonStr = BigDecimal(lon).setScale(4, BigDecimal.RoundingMode.HALF_UP).toString
+    val latStr = formatCoord(lat)
+    val lonStr = formatCoord(lon)
 
     for {
       // Guard: validate coordinate ranges before any network call
       _           <- validateCoords(lat, lon)
 
       // Step 1: resolve coordinates to a forecast grid URL
-      pointsUri   <- parseUri("points", s"${Config.nwsBaseUrl}/points/$latStr,$lonStr")
-      pointsBody  <- fetchBody(pointsUri, client)
-      pointsResp  <- decodeJson[PointsResponse]("Points response", pointsBody)
+      pointsResp  <- fetchPage[PointsResponse](
+                       uriKind = "points",
+                       rawUri = s"${Config.nwsBaseUrl}/points/$latStr,$lonStr",
+                       decodeLabel = "Points response",
+                       client = client
+                     )
 
       // Step 2: fetch the forecast periods
-      forecastUri <- parseUri("forecast", pointsResp.forecastUrl)
-      forecastBody <- fetchBody(forecastUri, client)
-      forecastResp <- decodeJson[ForecastResponse]("Forecast response", forecastBody)
+      forecastResp <- fetchPage[ForecastResponse](
+                        uriKind = "forecast",
+                        rawUri = pointsResp.forecastUrl,
+                        decodeLabel = "Forecast response",
+                        client = client
+                      )
 
       // Find "Today"; fall back to the first period (e.g. "Tonight" after 6 PM)
       period       <- selectPeriod(forecastResp.periods)
