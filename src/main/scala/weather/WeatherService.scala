@@ -6,7 +6,7 @@ import io.circe.parser.decode
 import org.http4s.client.Client
 import org.http4s.{Request, Status, Uri}
 import org.typelevel.ci.CIString
-import weather.util.{HttpHeaderParsers, NwsCoverageValidator, RetryPolicy, RetryUtils}
+import weather.util.{CircuitBreaker, HttpHeaderParsers, NwsCoverageValidator, RetryPolicy, RetryUtils}
 
 import scala.concurrent.duration._
 
@@ -118,23 +118,32 @@ object WeatherService {
       uriKind: String,
       rawUri: String,
       decodeLabel: String,
-      client: Client[IO]
+      client: Client[IO],
+      circuitBreaker: Option[CircuitBreaker] = None
   ): IO[A] =
     for {
       uri  <- parseUri(uriKind, rawUri)
-      body <- RetryUtils.withRetry(
-                effect = fetchBody(uri, client),
-                policy = retryPolicy,
-                isRetryable = isRetryable,
-                retryDelayFromError = retryDelayFrom
-              )
+      body <- {
+                val fetching = RetryUtils.withRetry(
+                  effect = fetchBody(uri, client),
+                  policy = retryPolicy,
+                  isRetryable = isRetryable,
+                  retryDelayFromError = retryDelayFrom
+                )
+                circuitBreaker.fold(fetching)(_.protect(fetching))
+              }
       data <- decodeJson[A](decodeLabel, body)
     } yield data
 
   private def formatCoord(value: Double, scale: Int = 4): String =
     BigDecimal(value).setScale(scale, BigDecimal.RoundingMode.HALF_UP).toString
 
-  def fetch(lat: Double, lon: Double, client: Client[IO]): IO[WeatherResult] = {
+  def fetch(
+      lat: Double,
+      lon: Double,
+      client: Client[IO],
+      circuitBreaker: Option[CircuitBreaker] = None
+  ): IO[WeatherResult] = {
     val latStr = formatCoord(lat)
     val lonStr = formatCoord(lon)
 
@@ -147,7 +156,8 @@ object WeatherService {
                        uriKind = "points",
                        rawUri = s"${Config.nwsBaseUrl}/points/$latStr,$lonStr",
                        decodeLabel = "Points response",
-                       client = client
+                       client = client,
+                       circuitBreaker = circuitBreaker
                      )
 
       // Step 2: fetch the forecast periods
@@ -155,7 +165,8 @@ object WeatherService {
                         uriKind = "forecast",
                         rawUri = pointsResp.forecastUrl,
                         decodeLabel = "Forecast response",
-                        client = client
+                        client = client,
+                        circuitBreaker = circuitBreaker
                       )
 
       // Find "Today"; fall back to the first period (e.g. "Tonight" after 6 PM)

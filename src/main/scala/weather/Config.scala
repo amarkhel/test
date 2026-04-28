@@ -19,5 +19,10 @@ object Config {
   val rateLimitRequestsPerSecond: Double = 10.0
   val rateLimitBurstSize: Int = 20
   val rateLimitRetryAfterSeconds: Int = 1
+
+  // Circuit breaker for outbound NWS calls
+  val circuitBreakerEnabled: Boolean = true
+  val circuitBreakerFailureThreshold: Int = 5   // failures before opening
+  val circuitBreakerResetTimeout: FiniteDuration = 30.seconds
 }
 

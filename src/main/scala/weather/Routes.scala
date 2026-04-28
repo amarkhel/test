@@ -7,6 +7,7 @@ import org.http4s._
 import org.http4s.circe.CirceEntityEncoder._
 import org.http4s.client.Client
 import org.http4s.dsl.io._
+import weather.util.{CircuitBreaker, CircuitBreakerOpenException}
 
 object Routes {
 
@@ -16,22 +17,26 @@ object Routes {
   private def errorJson(msg: String): Json =
     Json.obj("error" -> Json.fromString(msg))
 
-  def weatherRoutes(client: Client[IO]): HttpRoutes[IO] =
+  def weatherRoutes(
+      client: Client[IO],
+      circuitBreaker: Option[CircuitBreaker] = None
+  ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
 
       // GET /weather?lat=39.7456&lon=-97.0892
       case GET -> Root / "weather" :? LatQueryParam(lat) +& LonQueryParam(lon) =>
-        WeatherService.fetch(lat, lon, client)
+        WeatherService.fetch(lat, lon, client, circuitBreaker)
           .flatMap(result => Ok(result.asJson))
           .handleErrorWith {
-            case e: WeatherError.InvalidCoordinates  => BadRequest(errorJson(e.getMessage))
-            case e: WeatherError.UnsupportedCoordinates => BadRequest(errorJson(e.getMessage))
-            case e: WeatherError.UpstreamNotFound    => NotFound(errorJson(e.getMessage))
-            case e: WeatherError.UpstreamRateLimited => TooManyRequests(errorJson(e.getMessage))
-            case e: WeatherError.UpstreamUnavailable => ServiceUnavailable(errorJson(e.getMessage))
-            case e: WeatherError.EmptyForecast       => BadGateway(errorJson(e.getMessage))
-            case e: WeatherError.DecodeFailure       => BadGateway(errorJson(e.getMessage))
-            case e                                   => InternalServerError(errorJson(e.getMessage))
+            case _: CircuitBreakerOpenException              => ServiceUnavailable(errorJson("Service temporarily unavailable. Please retry shortly."))
+            case e: WeatherError.InvalidCoordinates          => BadRequest(errorJson(e.getMessage))
+            case e: WeatherError.UnsupportedCoordinates      => BadRequest(errorJson(e.getMessage))
+            case e: WeatherError.UpstreamNotFound            => NotFound(errorJson(e.getMessage))
+            case e: WeatherError.UpstreamRateLimited         => TooManyRequests(errorJson(e.getMessage))
+            case e: WeatherError.UpstreamUnavailable         => ServiceUnavailable(errorJson(e.getMessage))
+            case e: WeatherError.EmptyForecast               => BadGateway(errorJson(e.getMessage))
+            case e: WeatherError.DecodeFailure               => BadGateway(errorJson(e.getMessage))
+            case e                                           => InternalServerError(errorJson(e.getMessage))
           }
 
       // Missing or malformed query params → 400
