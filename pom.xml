@@ -22,6 +22,8 @@
     <logback.version>1.5.6</logback.version>
     <munit.version>1.0.0</munit.version>
     <munit.cats.effect.version>2.0.0</munit.cats.effect.version>
+    <redis4cats.version>1.7.2</redis4cats.version>
+    <log4cats.version>2.7.0</log4cats.version>
   </properties>
 
   <dependencies>
@@ -64,6 +66,22 @@
       <groupId>ch.qos.logback</groupId>
       <artifactId>logback-classic</artifactId>
       <version>${logback.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>dev.profunktor</groupId>
+      <artifactId>redis4cats-effects_${scala.binary.version}</artifactId>
+      <version>${redis4cats.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>dev.profunktor</groupId>
+      <artifactId>redis4cats-log4cats_${scala.binary.version}</artifactId>
+      <version>${redis4cats.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.typelevel</groupId>
+      <artifactId>log4cats-slf4j_${scala.binary.version}</artifactId>
+      <version>${log4cats.version}</version>
     </dependency>
 
     <dependency>

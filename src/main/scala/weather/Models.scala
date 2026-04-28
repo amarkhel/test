@@ -1,24 +1,31 @@
 package weather
 
-import io.circe.{Decoder, HCursor}
+import io.circe.{Decoder, Encoder, HCursor}
+import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 
 import scala.concurrent.duration.FiniteDuration
 
 case class PointsResponse(forecastUrl: String)
 
 object PointsResponse {
+  // NWS wire-format decoder (reads nested "properties.forecast")
   implicit val decoder: Decoder[PointsResponse] = (c: HCursor) =>
     c.downField("properties").downField("forecast").as[String].map(PointsResponse(_))
+
+  // Flat codecs used for cache storage: {"forecastUrl":"..."}
+  val cacheEncoder: Encoder[PointsResponse] = deriveEncoder[PointsResponse]
+  val cacheDecoder: Decoder[PointsResponse] = deriveDecoder[PointsResponse]
 }
 
 case class ForecastPeriod(
-  name:            String,  // "Today", "Tonight", "Monday", ...
+  name:            String,
   temperature:     Int,
-  temperatureUnit: String,  // "F" or "C"
+  temperatureUnit: String,
   shortForecast:   String
 )
 
 object ForecastPeriod {
+  // NWS wire-format decoder
   implicit val decoder: Decoder[ForecastPeriod] = (c: HCursor) =>
     for {
       name  <- c.downField("name").as[String]
@@ -26,15 +33,30 @@ object ForecastPeriod {
       unit  <- c.downField("temperatureUnit").as[String]
       short <- c.downField("shortForecast").as[String]
     } yield ForecastPeriod(name, temp, unit, short)
+
+  // Flat codecs for cache storage
+  val cacheEncoder: Encoder[ForecastPeriod] = deriveEncoder[ForecastPeriod]
+  val cacheDecoder: Decoder[ForecastPeriod] = deriveDecoder[ForecastPeriod]
 }
 
 case class ForecastResponse(periods: List[ForecastPeriod])
 
 object ForecastResponse {
+  // NWS wire-format decoder
   implicit val decoder: Decoder[ForecastResponse] = (c: HCursor) =>
     c.downField("properties").downField("periods")
       .as[List[ForecastPeriod]]
       .map(ForecastResponse(_))
+
+  // Flat codecs for cache storage: {"periods":[...]}
+  val cacheEncoder: Encoder[ForecastResponse] = {
+    implicit val pe: Encoder[ForecastPeriod] = ForecastPeriod.cacheEncoder
+    deriveEncoder[ForecastResponse]
+  }
+  val cacheDecoder: Decoder[ForecastResponse] = {
+    implicit val pd: Decoder[ForecastPeriod] = ForecastPeriod.cacheDecoder
+    deriveDecoder[ForecastResponse]
+  }
 }
 
 // ---------------------------------------------------------------------------

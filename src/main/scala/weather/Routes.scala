@@ -19,13 +19,14 @@ object Routes {
 
   def weatherRoutes(
       client: Client[IO],
-      circuitBreaker: Option[CircuitBreaker] = None
+      circuitBreaker: Option[CircuitBreaker] = None,
+      cache: WeatherCache = WeatherCache.noop
   ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
 
       // GET /weather?lat=39.7456&lon=-97.0892
       case GET -> Root / "weather" :? LatQueryParam(lat) +& LonQueryParam(lon) =>
-        WeatherService.fetch(lat, lon, client, circuitBreaker)
+        WeatherService.fetch(lat, lon, client, cache, circuitBreaker)
           .flatMap(result => Ok(result.asJson))
           .handleErrorWith {
             case _: CircuitBreakerOpenException              => ServiceUnavailable(errorJson("Service temporarily unavailable. Please retry shortly."))

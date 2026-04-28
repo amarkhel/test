@@ -19,13 +19,83 @@ characterisation for any US location, powered by the
 
 ## Run
 
-```bash
+```powershell
 sbt run
 ```
 
 Server starts on **http://localhost:8080**.
 
 First start downloads dependencies (~100 MB). Subsequent starts are fast.
+
+## Cache configuration
+
+The service supports 3 cache modes controlled by environment variables.
+
+### `WEATHER_CACHE_TYPE`
+
+- `memory` (default): in-process TTL cache with single-flight protection
+- `redis`: shared distributed cache via Redis
+- `none`: disables caching
+
+### `REDIS_URI`
+
+- Used only when `WEATHER_CACHE_TYPE=redis`
+- Default: `redis://localhost:6379`
+
+### Defaults
+
+- Points cache TTL: `6 hours`
+- Forecast cache TTL: `10 minutes`
+- In-memory max entries: points `5000`, forecast `10000`
+
+### PowerShell examples
+
+```powershell
+# Default mode (in-memory)
+$env:WEATHER_CACHE_TYPE = "memory"
+sbt run
+```
+
+```powershell
+# Redis mode
+$env:WEATHER_CACHE_TYPE = "redis"
+$env:REDIS_URI = "redis://localhost:6379"
+sbt run
+```
+
+```powershell
+# No cache
+$env:WEATHER_CACHE_TYPE = "none"
+sbt run
+```
+
+### Redis quickstart (Docker)
+
+```powershell
+# Start Redis in the background
+# (re-runnable: removes any previous container with same name)
+docker rm -f weather-redis 2>$null
+docker run -d --name weather-redis -p 6379:6379 redis:7
+```
+
+```powershell
+# Verify Redis is reachable
+# Expected output: PONG
+docker exec weather-redis redis-cli ping
+```
+
+```powershell
+# Run app against Redis cache
+$env:WEATHER_CACHE_TYPE = "redis"
+$env:REDIS_URI = "redis://localhost:6379"
+sbt run
+```
+
+```powershell
+# Optional cleanup
+docker stop weather-redis
+docker rm weather-redis
+```
 
 ## Endpoint
 
@@ -56,19 +126,13 @@ curl "http://localhost:8080/weather?lat=27.9506&lon=-82.4572"
 
 | Category | Fahrenheit | Celsius (approx) |
 |---|---|---|
-| `cold` | ≤ 50 °F | ≤ 10 °C |
-| `moderate` | 51 – 84 °F | 11 – 29 °C |
-| `hot` | ≥ 85 °F | ≥ 29 °C |
+| `cold` | <= 50 F | <= 10 C |
+| `moderate` | 51 - 84 F | 11 - 29 C |
+| `hot` | >= 85 F | >= 29 C |
 
-## Shortcuts / non-production notes
-1. **No Docker image** - A production deployment would include a `Dockerfile` and container registry (ECR, Docker Hub, etc.) for reproducible, scalable deployments.
-2. **No caching** - every request makes two NWS API calls.
-2. **Basic retry/back-off only** - transient upstream failures now use exponential retry/back-off with jitter and optional HTTP 429 retries; rate-limiting controls and circuit breakers are still not implemented.
-3. **"Today" fallback** - after ~6 PM the NWS removes the "Today" period and the
-   first period becomes "Tonight". The server falls back to the first available
-   period rather than returning an error.
-4. **Fahrenheit only** - NWS always returns °F for US locations, so this is fine
-   for the stated use case. Celsius conversion is not implemented.
-5. **Coordinate coverage validation implemented** - requests now return HTTP 400 for coordinates outside NWS-supported US/territory regions using reusable polygon-based validation.
-6. **No Docker image** - A production deployment would include a `Dockerfile`
-   and container registry (ECR, Docker Hub, etc.) for reproducible, scalable deployments.
+## Notes
+
+1. **No Docker image yet** - a production deployment would include a `Dockerfile` and container registry.
+2. **"Today" fallback** - after about 6 PM the NWS may omit the "Today" period; the server falls back to the first available period.
+3. **Fahrenheit only** - NWS returns Fahrenheit for US locations; Celsius conversion is not implemented.
+4. **Coverage validation enabled** - requests outside NWS-supported US/territory regions return HTTP 400.

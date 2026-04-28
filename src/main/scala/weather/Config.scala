@@ -24,5 +24,18 @@ object Config {
   val circuitBreakerEnabled: Boolean = true
   val circuitBreakerFailureThreshold: Int = 5   // failures before opening
   val circuitBreakerResetTimeout: FiniteDuration = 30.seconds
+
+  // Cache backend selection.
+  // Env var WEATHER_CACHE_TYPE accepts: "memory" (default) | "redis" | "none"
+  val cacheType: String = sys.env.getOrElse("WEATHER_CACHE_TYPE", "memory")
+
+  // Cache /points lookups longer than forecasts because grid mapping is stable.
+  val pointsCacheTtl: FiniteDuration = 6.hours
+  val forecastCacheTtl: FiniteDuration = 10.minutes
+  val pointsCacheMaxEntries: Int = 5000
+  val forecastCacheMaxEntries: Int = 10000
+
+  // Redis URI used when cacheType = "redis". Override with env var REDIS_URI.
+  val redisUri: String = sys.env.getOrElse("REDIS_URI", "redis://localhost:6379")
 }
 
