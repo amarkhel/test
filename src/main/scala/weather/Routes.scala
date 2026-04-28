@@ -22,15 +22,16 @@ object Routes {
       // GET /weather?lat=39.7456&lon=-97.0892
       case GET -> Root / "weather" :? LatQueryParam(lat) +& LonQueryParam(lon) =>
         WeatherService.fetch(lat, lon, client)
-          .flatMap(result => Ok(result.asJson))
-          .handleErrorWith {
-            case e: WeatherError.InvalidCoordinates  => BadRequest(errorJson(e.getMessage))
-            case e: WeatherError.UpstreamNotFound    => NotFound(errorJson(e.getMessage))
-            case e: WeatherError.UpstreamUnavailable => ServiceUnavailable(errorJson(e.getMessage))
-            case e: WeatherError.EmptyForecast       => BadGateway(errorJson(e.getMessage))
-            case e: WeatherError.DecodeFailure       => BadGateway(errorJson(e.getMessage))
-            case e                                   => InternalServerError(errorJson(e.getMessage))
+          .flatMap {
+            case Right(result)                        => Ok(result.asJson)
+            case Left(e: WeatherError.InvalidCoordinates)  => BadRequest(errorJson(e.getMessage))
+            case Left(e: WeatherError.UpstreamNotFound)    => NotFound(errorJson(e.getMessage))
+            case Left(e: WeatherError.UpstreamClientError) => BadGateway(errorJson(e.getMessage))
+            case Left(e: WeatherError.UpstreamUnavailable) => ServiceUnavailable(errorJson(e.getMessage))
+            case Left(e: WeatherError.EmptyForecast)       => BadGateway(errorJson(e.getMessage))
+            case Left(e: WeatherError.DecodeFailure)       => BadGateway(errorJson(e.getMessage))
           }
+          .handleErrorWith(e => InternalServerError(errorJson(e.getMessage)))
 
       // Missing or malformed query params → 400
       case GET -> Root / "weather" =>

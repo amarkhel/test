@@ -1,6 +1,6 @@
 package weather
 
-import io.circe.{Decoder, HCursor}
+import io.circe.{Decoder, Encoder, HCursor}
 
 case class PointsResponse(forecastUrl: String)
 
@@ -49,6 +49,10 @@ object WeatherError {
   final case class UpstreamNotFound(details: String)
       extends WeatherError(s"NWS does not cover these coordinates: $details")
 
+  /** NWS returned a non-404 4xx response; return 502. */
+  final case class UpstreamClientError(details: String)
+      extends WeatherError(s"NWS rejected request: $details")
+
   /** NWS returned 5xx or an unexpected status; return 503. */
   final case class UpstreamUnavailable(details: String)
       extends WeatherError(s"NWS API unavailable: $details")
@@ -64,16 +68,36 @@ object WeatherError {
 
 // ---------------------------------------------------------------------------
 // The JSON we return to the caller
+sealed trait TemperatureCategory {
+  def value: String
+}
+
+object TemperatureCategory {
+  case object Hot extends TemperatureCategory {
+    val value: String = "hot"
+  }
+
+  case object Moderate extends TemperatureCategory {
+    val value: String = "moderate"
+  }
+
+  case object Cold extends TemperatureCategory {
+    val value: String = "cold"
+  }
+
+  implicit val encoder: Encoder[TemperatureCategory] =
+    Encoder.encodeString.contramap(_.value)
+}
+
 case class WeatherResult(
   location:            String,
   shortForecast:       String,
   temperature:         Int,
   temperatureUnit:     String,
-  temperatureCategory: String  // "hot" | "moderate" | "cold"
+  temperatureCategory: TemperatureCategory
 )
 
 object WeatherResult {
   import io.circe.generic.semiauto._
-  import io.circe.Encoder
   implicit val encoder: Encoder[WeatherResult] = deriveEncoder
 }
